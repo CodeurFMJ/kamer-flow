@@ -1,3 +1,4 @@
+
 export type TransactionType = 'EXPENSE' | 'INCOME';
 
 export interface User {
@@ -26,4 +27,13 @@ export interface FinancialSummary {
   totalIncome: number;
   totalExpense: number;
   balance: number;
+}
+
+export interface FinancialGoal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  deadline?: string;
+  color: string;
 }

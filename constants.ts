@@ -16,6 +16,7 @@ export const INCOME_CATEGORIES: CategoryItem[] = [
   { id: 'business', label: 'Business / Gombo', icon: 'TrendingUp', color: '#2dd4bf' },
   { id: 'tontine_benefit', label: 'Bénéfice Tontine', icon: 'PiggyBank', color: '#818cf8' },
   { id: 'gift', label: 'Cadeaux', icon: 'Gift', color: '#f472b6' },
+  { id: 'tontine', label: 'Tontine', icon: 'Users', color: '#8b5cf6' },
 ];
 
 // Mock data for initial visualization

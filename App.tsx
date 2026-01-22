@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, LogOut, User as UserIcon } from 'lucide-react';
-import { Transaction, FinancialSummary } from './types';
+import { Plus, LogOut, User as UserIcon, Bell, BellOff, AlertCircle, X } from 'lucide-react';
+import { Transaction, FinancialSummary, FinancialGoal } from './types';
 import { MOCK_TRANSACTIONS } from './constants';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import AddTransactionModal from './components/AddTransactionModal';
+import AddGoalModal from './components/AddGoalModal';
+import GoalList from './components/GoalList';
 import AIAssistant from './components/AIAssistant';
 import { useAuth } from './context/AuthContext';
 import AuthScreen from './components/AuthScreen';
@@ -13,26 +15,41 @@ import AuthScreen from './components/AuthScreen';
 const App: React.FC = () => {
   const { user, logout, isLoading } = useAuth();
   
-  // State for transactions, initialized empty, loaded via useEffect
+  // State for transactions
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [goals, setGoals] = useState<FinancialGoal[]>([]);
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+  
+  // Notification States
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [showDailyReminder, setShowDailyReminder] = useState(false);
 
   // Load data when user changes
   useEffect(() => {
     if (user) {
+      // Load Transactions
       const storageKey = `kamerflow_transactions_${user.id}`;
       const saved = localStorage.getItem(storageKey);
       if (saved) {
         setTransactions(JSON.parse(saved));
       } else {
-        // If it's a new user, give them the mock data as a template, but assign new IDs
-        // Or keep it empty. Let's give mock data for better UX demonstration.
-        // But only if we want to demo. Let's start clean for new users to be realistic, 
-        // OR mock data only for a specific demo user. Let's start empty for clean feel, 
-        // but maybe inject mock data if array is strictly empty on first ever load?
-        // Let's settle on: Empty for new users.
         setTransactions([]);
       }
+
+      // Load Goals
+      const goalsKey = `kamerflow_goals_${user.id}`;
+      const savedGoals = localStorage.getItem(goalsKey);
+      if (savedGoals) {
+        setGoals(JSON.parse(savedGoals));
+      } else {
+        setGoals([]);
+      }
+
+      // Load notification preference
+      const notifPref = localStorage.getItem(`kamerflow_notif_pref_${user.id}`);
+      setNotificationsEnabled(notifPref === 'true');
     }
   }, [user]);
 
@@ -41,8 +58,55 @@ const App: React.FC = () => {
     if (user) {
       const storageKey = `kamerflow_transactions_${user.id}`;
       localStorage.setItem(storageKey, JSON.stringify(transactions));
+      checkDailyStatus();
     }
   }, [transactions, user]);
+
+  // Save data when goals change
+  useEffect(() => {
+    if (user) {
+      const goalsKey = `kamerflow_goals_${user.id}`;
+      localStorage.setItem(goalsKey, JSON.stringify(goals));
+    }
+  }, [goals, user]);
+
+  // Logic to check if user logged something today
+  const checkDailyStatus = () => {
+    if (!user) return;
+    
+    const today = new Date().toDateString();
+    const hasTransactionToday = transactions.some(t => new Date(t.date).toDateString() === today);
+
+    // Show banner if nothing logged today
+    setShowDailyReminder(!hasTransactionToday);
+
+    // Trigger Native Notification if enabled and nothing logged
+    if (notificationsEnabled && !hasTransactionToday && 'Notification' in window) {
+       if (Notification.permission === 'granted') {
+          // Prevent spamming logic could go here
+       }
+    }
+  };
+
+  const toggleNotifications = async () => {
+    if (!notificationsEnabled) {
+      if ('Notification' in window) {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          setNotificationsEnabled(true);
+          localStorage.setItem(`kamerflow_notif_pref_${user?.id}`, 'true');
+          new Notification("KamerFlow Activé", {
+            body: "On va gérer tes dos ensemble ! Je te ferai signe.",
+          });
+        }
+      } else {
+        alert("Ton navigateur ne supporte pas les notifications.");
+      }
+    } else {
+      setNotificationsEnabled(false);
+      localStorage.setItem(`kamerflow_notif_pref_${user?.id}`, 'false');
+    }
+  };
 
   const handleAddTransaction = (data: Omit<Transaction, 'id' | 'date'> & { date?: string }) => {
     const newTransaction: Transaction = {
@@ -56,6 +120,29 @@ const App: React.FC = () => {
   const handleDeleteTransaction = (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
   };
+
+  // -- GOAL HANDLERS --
+  const handleAddGoal = (data: Omit<FinancialGoal, 'id'>) => {
+    const newGoal: FinancialGoal = {
+      id: uuidv4(),
+      ...data
+    };
+    setGoals(prev => [newGoal, ...prev]);
+  };
+
+  const handleDeleteGoal = (id: string) => {
+    setGoals(prev => prev.filter(g => g.id !== id));
+  };
+
+  const handleAddFundsToGoal = (id: string, amount: number) => {
+    setGoals(prev => prev.map(g => {
+        if (g.id === id) {
+            return { ...g, currentAmount: g.currentAmount + amount };
+        }
+        return g;
+    }));
+  };
+  // -------------------
 
   const summary: FinancialSummary = useMemo(() => {
     const income = transactions
@@ -103,6 +190,14 @@ const App: React.FC = () => {
                 
                 <div className="flex items-center gap-4 w-full md:w-auto">
                    <button 
+                      onClick={toggleNotifications}
+                      className={`flex items-center gap-2 py-3 px-4 rounded-xl border border-white/10 transition-all ${notificationsEnabled ? 'bg-purple-500/20 text-purple-300 border-purple-500/50' : 'bg-slate-800 text-slate-400'}`}
+                      title={notificationsEnabled ? "Notifications activées" : "Activer les rappels"}
+                  >
+                      {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
+                  </button>
+
+                   <button 
                       onClick={logout}
                       className="flex items-center gap-2 bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-400 py-3 px-4 rounded-xl border border-white/10 transition-all"
                       title="Se déconnecter"
@@ -121,11 +216,42 @@ const App: React.FC = () => {
                 </div>
             </header>
 
+            {/* Daily Reminder Banner */}
+            {showDailyReminder && (
+              <div className="mb-8 bg-gradient-to-r from-orange-500/10 to-red-500/10 border border-orange-500/30 rounded-xl p-4 flex items-start justify-between backdrop-blur-md animate-fade-in">
+                 <div className="flex gap-4">
+                    <div className="bg-orange-500/20 p-2 rounded-lg h-fit text-orange-400">
+                      <AlertCircle size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-orange-200 font-bold font-orbitron text-lg">⚠️ Le Bilan du Jour !</h3>
+                      <p className="text-slate-300 text-sm mt-1">
+                        Gars, tu n'as rien noté aujourd'hui ? Si tu as dépensé pour le taxi ou le beignet-haricot, note ça vite avant d'oublier !
+                      </p>
+                    </div>
+                 </div>
+                 <button 
+                    onClick={() => setShowDailyReminder(false)}
+                    className="text-slate-500 hover:text-white transition-colors"
+                 >
+                   <X size={20} />
+                 </button>
+              </div>
+            )}
+
             {/* Main Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Left Column: Dashboard (2/3 width on LG) */}
-                <div className="lg:col-span-2">
+                <div className="lg:col-span-2 space-y-8">
                     <Dashboard summary={summary} transactions={transactions} />
+                    
+                    {/* Goals Section inside Main Dashboard Column */}
+                    <GoalList 
+                        goals={goals} 
+                        onAddFunds={handleAddFundsToGoal} 
+                        onDelete={handleDeleteGoal}
+                        onOpenAddModal={() => setIsGoalModalOpen(true)}
+                    />
                 </div>
 
                 {/* Right Column: List (1/3 width on LG) */}
@@ -148,6 +274,12 @@ const App: React.FC = () => {
             isOpen={isModalOpen} 
             onClose={() => setIsModalOpen(false)} 
             onAdd={handleAddTransaction} 
+        />
+        
+        <AddGoalModal
+            isOpen={isGoalModalOpen}
+            onClose={() => setIsGoalModalOpen(false)}
+            onAdd={handleAddGoal}
         />
 
         <AIAssistant transactions={transactions} balance={summary.balance} />

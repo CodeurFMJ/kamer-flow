@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, Sparkles, X, Send } from 'lucide-react';
+import { Bot, Sparkles, X } from 'lucide-react';
 import { Transaction } from '../types';
 import { getFinancialAdvice } from '../services/geminiService';
 

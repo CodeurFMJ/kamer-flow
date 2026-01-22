@@ -107,7 +107,7 @@ const Dashboard: React.FC<DashboardProps> = ({ summary, transactions }) => {
                     dataKey="value"
                     stroke="none"
                   >
-                    {expenseData.map((entry, index) => (
+                    {expenseData.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
@@ -168,7 +168,7 @@ const Dashboard: React.FC<DashboardProps> = ({ summary, transactions }) => {
                     formatter={(value: number) => [formatFCFA(value), '']}
                   />
                   <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={50}>
-                    {incomeData.map((entry, index) => (
+                    {incomeData.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={INCOME_COLORS[index % INCOME_COLORS.length]} />
                     ))}
                   </Bar>

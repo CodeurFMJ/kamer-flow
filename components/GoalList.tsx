@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FinancialGoal } from '../types';
 import { formatFCFA, formatDate } from '../utils/format';
-import { Target, Plus, Trash2, CheckCircle2, MoreHorizontal } from 'lucide-react';
+import { Target, Plus, Trash2, CheckCircle2 } from 'lucide-react';
 
 interface GoalListProps {
   goals: FinancialGoal[];

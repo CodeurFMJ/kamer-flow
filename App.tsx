@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, LogOut, User as UserIcon, Bell, BellOff, AlertCircle, X } from 'lucide-react';
+import { Plus, LogOut, Bell, BellOff, Sparkles } from 'lucide-react';
 import { Transaction, FinancialSummary, FinancialGoal } from './types';
-import { MOCK_TRANSACTIONS } from './constants';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import AddTransactionModal from './components/AddTransactionModal';
@@ -11,96 +10,65 @@ import GoalList from './components/GoalList';
 import AIAssistant from './components/AIAssistant';
 import { useAuth } from './context/AuthContext';
 import AuthScreen from './components/AuthScreen';
+import LandingPage from './components/LandingPage';
+import { checkAndSendTontineReminders, requestNotificationPermission } from './services/notificationService';
 
 const App: React.FC = () => {
   const { user, logout, isLoading } = useAuth();
   
-  // State for transactions
+  // Navigation State for Non-Authenticated Users
+  const [showAuth, setShowAuth] = useState(false);
+
+  // App Data State
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<FinancialGoal[]>([]);
-  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
-  
-  // Notification States
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [showDailyReminder, setShowDailyReminder] = useState(false);
 
-  // Load data when user changes
+  // Load Data
   useEffect(() => {
     if (user) {
-      // Load Transactions
-      const storageKey = `kamerflow_transactions_${user.id}`;
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        setTransactions(JSON.parse(saved));
-      } else {
-        setTransactions([]);
-      }
+      const saved = localStorage.getItem(`kamerflow_transactions_${user.id}`);
+      setTransactions(saved ? JSON.parse(saved) : []);
+      
+      const savedGoals = localStorage.getItem(`kamerflow_goals_${user.id}`);
+      setGoals(savedGoals ? JSON.parse(savedGoals) : []);
 
-      // Load Goals
-      const goalsKey = `kamerflow_goals_${user.id}`;
-      const savedGoals = localStorage.getItem(goalsKey);
-      if (savedGoals) {
-        setGoals(JSON.parse(savedGoals));
-      } else {
-        setGoals([]);
-      }
-
-      // Load notification preference
       const notifPref = localStorage.getItem(`kamerflow_notif_pref_${user.id}`);
       setNotificationsEnabled(notifPref === 'true');
     }
   }, [user]);
 
-  // Save data when transactions change
+  // Notifications Check Logic
+  useEffect(() => {
+    if (user && notificationsEnabled) {
+      checkAndSendTontineReminders(transactions, goals);
+    }
+  }, [transactions, goals, notificationsEnabled, user]);
+
+  // Save Data
   useEffect(() => {
     if (user) {
-      const storageKey = `kamerflow_transactions_${user.id}`;
-      localStorage.setItem(storageKey, JSON.stringify(transactions));
-      checkDailyStatus();
+      localStorage.setItem(`kamerflow_transactions_${user.id}`, JSON.stringify(transactions));
     }
   }, [transactions, user]);
 
-  // Save data when goals change
   useEffect(() => {
     if (user) {
-      const goalsKey = `kamerflow_goals_${user.id}`;
-      localStorage.setItem(goalsKey, JSON.stringify(goals));
+      localStorage.setItem(`kamerflow_goals_${user.id}`, JSON.stringify(goals));
     }
   }, [goals, user]);
 
-  // Logic to check if user logged something today
-  const checkDailyStatus = () => {
-    if (!user) return;
-    
-    const today = new Date().toDateString();
-    const hasTransactionToday = transactions.some(t => new Date(t.date).toDateString() === today);
-
-    // Show banner if nothing logged today
-    setShowDailyReminder(!hasTransactionToday);
-
-    // Trigger Native Notification if enabled and nothing logged
-    if (notificationsEnabled && !hasTransactionToday && 'Notification' in window) {
-       if (Notification.permission === 'granted') {
-          // Prevent spamming logic could go here
-       }
-    }
-  };
-
   const toggleNotifications = async () => {
     if (!notificationsEnabled) {
-      if ('Notification' in window) {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-          setNotificationsEnabled(true);
-          localStorage.setItem(`kamerflow_notif_pref_${user?.id}`, 'true');
-          new Notification("KamerFlow Activé", {
-            body: "On va gérer tes dos ensemble ! Je te ferai signe.",
-          });
-        }
+      const granted = await requestNotificationPermission();
+      if (granted) {
+        setNotificationsEnabled(true);
+        localStorage.setItem(`kamerflow_notif_pref_${user?.id}`, 'true');
+        new Notification("KamerFlow", { body: "Notifications activées ! Je te rappellerai tes échéances de Tontine." });
       } else {
-        alert("Ton navigateur ne supporte pas les notifications.");
+        alert("Notifications refusées par le navigateur.");
       }
     } else {
       setNotificationsEnabled(false);
@@ -109,25 +77,19 @@ const App: React.FC = () => {
   };
 
   const handleAddTransaction = (data: Omit<Transaction, 'id' | 'date'> & { date?: string }) => {
-    const newTransaction: Transaction = {
+    setTransactions(prev => [{
       id: uuidv4(),
       date: data.date || new Date().toISOString(),
       ...data,
-    };
-    setTransactions(prev => [newTransaction, ...prev]);
+    }, ...prev]);
   };
 
   const handleDeleteTransaction = (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
   };
 
-  // -- GOAL HANDLERS --
   const handleAddGoal = (data: Omit<FinancialGoal, 'id'>) => {
-    const newGoal: FinancialGoal = {
-      id: uuidv4(),
-      ...data
-    };
-    setGoals(prev => [newGoal, ...prev]);
+    setGoals(prev => [{ id: uuidv4(), ...data }, ...prev]);
   };
 
   const handleDeleteGoal = (id: string) => {
@@ -135,117 +97,89 @@ const App: React.FC = () => {
   };
 
   const handleAddFundsToGoal = (id: string, amount: number) => {
-    setGoals(prev => prev.map(g => {
-        if (g.id === id) {
-            return { ...g, currentAmount: g.currentAmount + amount };
-        }
-        return g;
-    }));
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, currentAmount: g.currentAmount + amount } : g));
   };
-  // -------------------
 
   const summary: FinancialSummary = useMemo(() => {
-    const income = transactions
-      .filter(t => t.type === 'INCOME')
-      .reduce((acc, t) => acc + t.amount, 0);
-    const expense = transactions
-      .filter(t => t.type === 'EXPENSE')
-      .reduce((acc, t) => acc + t.amount, 0);
-    
-    return {
-      totalIncome: income,
-      totalExpense: expense,
-      balance: income - expense
-    };
+    const income = transactions.filter(t => t.type === 'INCOME').reduce((acc, t) => acc + t.amount, 0);
+    const expense = transactions.filter(t => t.type === 'EXPENSE').reduce((acc, t) => acc + t.amount, 0);
+    return { totalIncome: income, totalExpense: expense, balance: income - expense };
   }, [transactions]);
 
-  if (isLoading) {
-    return <div className="min-h-screen bg-black flex items-center justify-center text-cyan-500">Chargement...</div>;
-  }
+  if (isLoading) return <div className="min-h-screen bg-white flex items-center justify-center text-cyan-600">Chargement...</div>;
 
+  // Navigation Logic
   if (!user) {
-    return <AuthScreen />;
+    if (!showAuth) {
+      return <LandingPage onGetStarted={() => setShowAuth(true)} />;
+    }
+    return <AuthScreen onBack={() => setShowAuth(false)} />;
   }
 
+  // Authenticated Dashboard
   return (
-    <div className="min-h-screen pb-20 bg-[url('https://images.unsplash.com/photo-1535868463750-c78d9543614f?q=80&w=2076&auto=format&fit=crop')] bg-cover bg-fixed bg-center">
-        {/* Dark Overlay */}
-        <div className="absolute inset-0 bg-slate-950/90 z-0 pointer-events-none"></div>
+    <div className="min-h-screen bg-slate-50 relative overflow-hidden font-sans selection:bg-cyan-200 selection:text-cyan-900">
+        
+        {/* Light Theme Background Gradients */}
+        <div className="fixed inset-0 z-0 pointer-events-none">
+            <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-100 blur-[100px] opacity-60"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-100 blur-[100px] opacity-60"></div>
+             <div className="absolute top-[30%] left-[40%] w-[30%] h-[30%] rounded-full bg-purple-100 blur-[120px] opacity-40"></div>
+        </div>
 
-        <div className="relative z-10 max-w-7xl mx-auto px-4 py-8">
+        <div className="relative z-10 max-w-[1400px] mx-auto px-6 py-8">
             
             {/* Header */}
-            <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-                <div>
-                    <h1 className="text-4xl font-orbitron font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]">
-                        KAMER<span className="text-white">FLOW</span>
-                    </h1>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="bg-cyan-900/30 px-2 py-0.5 rounded text-xs text-cyan-300 border border-cyan-500/30">
-                        {user.name}
-                      </div>
-                      <p className="text-slate-400 text-sm">Gère tes dos comme un pro</p>
+            <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6 bg-white/70 backdrop-blur-xl border border-white/50 rounded-2xl p-4 md:px-8 shadow-sm">
+                <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-cyan-200">
+                        <Sparkles size={20} className="text-white" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-orbitron font-bold text-slate-900 tracking-wide">
+                            KAMER<span className="text-cyan-600">FLOW</span>
+                        </h1>
+                        <p className="text-slate-500 text-xs font-medium tracking-widest uppercase">Finance Manager Pro</p>
                     </div>
                 </div>
                 
-                <div className="flex items-center gap-4 w-full md:w-auto">
+                <div className="flex items-center gap-3">
+                   <div className="hidden md:flex flex-col items-end mr-4">
+                        <span className="text-slate-800 font-bold">{user.name}</span>
+                        <span className="text-slate-500 text-xs">Compte Premium</span>
+                   </div>
+
                    <button 
                       onClick={toggleNotifications}
-                      className={`flex items-center gap-2 py-3 px-4 rounded-xl border border-white/10 transition-all ${notificationsEnabled ? 'bg-purple-500/20 text-purple-300 border-purple-500/50' : 'bg-slate-800 text-slate-400'}`}
-                      title={notificationsEnabled ? "Notifications activées" : "Activer les rappels"}
+                      title={notificationsEnabled ? "Désactiver les rappels" : "Activer les rappels Tontine"}
+                      className={`p-3 rounded-xl border transition-all duration-300 ${notificationsEnabled ? 'bg-cyan-50 border-cyan-200 text-cyan-600' : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-white'}`}
                   >
                       {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
                   </button>
 
                    <button 
                       onClick={logout}
-                      className="flex items-center gap-2 bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-400 py-3 px-4 rounded-xl border border-white/10 transition-all"
-                      title="Se déconnecter"
+                      className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all duration-300"
                   >
                       <LogOut size={20} />
                   </button>
 
-                  {/* Floating Add Button (Desktop) / Header Action */}
                   <button 
                       onClick={() => setIsModalOpen(true)}
-                      className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 px-6 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.5)] transition-all transform hover:scale-105"
+                      className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold py-3 px-6 rounded-xl shadow-lg shadow-slate-200 transition-all transform hover:translate-y-[-2px]"
                   >
-                      <Plus size={20} className="stroke-[3px]" />
-                      <span className="font-orbitron">NOUVEAU</span>
+                      <Plus size={18} strokeWidth={2.5} />
+                      <span className="font-rajdhani font-bold tracking-wide">NOUVEAU</span>
                   </button>
                 </div>
             </header>
 
-            {/* Daily Reminder Banner */}
-            {showDailyReminder && (
-              <div className="mb-8 bg-gradient-to-r from-orange-500/10 to-red-500/10 border border-orange-500/30 rounded-xl p-4 flex items-start justify-between backdrop-blur-md animate-fade-in">
-                 <div className="flex gap-4">
-                    <div className="bg-orange-500/20 p-2 rounded-lg h-fit text-orange-400">
-                      <AlertCircle size={24} />
-                    </div>
-                    <div>
-                      <h3 className="text-orange-200 font-bold font-orbitron text-lg">⚠️ Le Bilan du Jour !</h3>
-                      <p className="text-slate-300 text-sm mt-1">
-                        Gars, tu n'as rien noté aujourd'hui ? Si tu as dépensé pour le taxi ou le beignet-haricot, note ça vite avant d'oublier !
-                      </p>
-                    </div>
-                 </div>
-                 <button 
-                    onClick={() => setShowDailyReminder(false)}
-                    className="text-slate-500 hover:text-white transition-colors"
-                 >
-                   <X size={20} />
-                 </button>
-              </div>
-            )}
-
-            {/* Main Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left Column: Dashboard (2/3 width on LG) */}
-                <div className="lg:col-span-2 space-y-8">
+            {/* Main Layout Grid */}
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+                
+                {/* Left Column (Dashboard & Goals) */}
+                <div className="xl:col-span-8 flex flex-col gap-8">
                     <Dashboard summary={summary} transactions={transactions} />
-                    
-                    {/* Goals Section inside Main Dashboard Column */}
                     <GoalList 
                         goals={goals} 
                         onAddFunds={handleAddFundsToGoal} 
@@ -254,22 +188,13 @@ const App: React.FC = () => {
                     />
                 </div>
 
-                {/* Right Column: List (1/3 width on LG) */}
-                <div className="lg:col-span-1">
+                {/* Right Column (Transactions History) */}
+                <div className="xl:col-span-4 h-full">
                     <TransactionList transactions={transactions} onDelete={handleDeleteTransaction} />
                 </div>
             </div>
-
-            {/* Mobile Add Button (Sticky) */}
-            <button 
-                onClick={() => setIsModalOpen(true)}
-                className="md:hidden fixed bottom-6 right-6 z-40 bg-cyan-500 text-black p-4 rounded-full shadow-[0_0_20px_rgba(6,182,212,0.6)]"
-            >
-                <Plus size={32} />
-            </button>
         </div>
 
-        {/* Modals & Overlays */}
         <AddTransactionModal 
             isOpen={isModalOpen} 
             onClose={() => setIsModalOpen(false)} 

@@ -2,6 +2,14 @@ import { GoogleGenAI } from "@google/genai";
 import { Transaction } from '../types';
 import { formatFCFA } from '../utils/format';
 
+// Déclaration de process pour TypeScript
+declare const process: {
+  env: {
+    API_KEY?: string;
+    [key: string]: string | undefined;
+  }
+};
+
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
 export const getFinancialAdvice = async (transactions: Transaction[], balance: number): Promise<string> => {
